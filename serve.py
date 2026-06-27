@@ -157,15 +157,16 @@ def svm_rank(tags: str = '', pid: str = '', C: float = 0.01):
     scores = [100*float(s[ix]) for ix in sortix]
 
     # get the words that score most positively and most negatively for the svm
-    ivocab = {v:k for k,v in features['vocab'].items()} # index to word mapping
+    ivocab = {v:k for k,v in features['vocab'].items()}
     weights = clf.coef_[0] # (n_features,) weights of the trained svm
     sortix = np.argsort(-weights)
     words = []
-    for ix in list(sortix[:40]) + list(sortix[-20:]):
-        words.append({
-            'word': ivocab[ix],
-            'weight': weights[ix],
-        })
+    if ivocab:
+        for ix in list(sortix[:40]) + list(sortix[-20:]):
+            words.append({
+                'word': ivocab[ix],
+                'weight': weights[ix],
+            })
 
     return pids, scores, words
 
@@ -287,7 +288,7 @@ def main():
     context['papers'] = papers
     context['tags'] = rtags
     context['words'] = words
-    context['words_desc'] = "Here are the top 40 most positive and bottom 20 most negative weights of the SVM. If they don't look great then try tuning the regularization strength hyperparameter of the SVM, svm_c, above. Lower C is higher regularization."
+    context['words_desc'] = "Top SVM weights by dimension. Tune svm_c to adjust regularization (lower C = stronger regularization)."
     context['gvars'] = {}
     context['gvars']['rank'] = opt_rank
     context['gvars']['tags'] = opt_tags
@@ -308,28 +309,33 @@ def inspect():
     if pid not in pdb:
         return "error, malformed pid" # todo: better error handling
 
-    # load the tfidf vectors, the vocab, and the idf table
+    # load the feature vectors, the vocab, and the idf table
     features = load_features()
     x = features['x']
     idf = features['idf']
     ivocab = {v:k for k,v in features['vocab'].items()}
     pix = features['pids'].index(pid)
-    wixs = np.flatnonzero(np.asarray(x[pix].todense()))
+    # embedding vector: show top dimensions by magnitude instead of tfidf words
+    vec = x[pix]  # shape (384,) dense float32
     words = []
-    for ix in wixs:
-        words.append({
-            'word': ivocab[ix],
-            'weight': float(x[pix, ix]),
-            'idf': float(idf[ix]),
-        })
-    words.sort(key=lambda w: w['weight'], reverse=True)
+    if ivocab:
+        # legacy tfidf path (vocab present)
+        wixs = np.flatnonzero(vec)
+        for ix in wixs:
+            words.append({
+                'word': ivocab[ix],
+                'weight': float(vec[ix]),
+                'idf': float(idf[ix]) if len(idf) > ix else 0.0,
+            })
+        words.sort(key=lambda w: w['weight'], reverse=True)
+    # if vocab is empty (embedding mode), words stays [] and the template renders nothing
 
     # package everything up and render
     paper = render_pid(pid)
     context = default_context()
     context['paper'] = paper
     context['words'] = words
-    context['words_desc'] = "The following are the tokens and their (tfidf) weight in the paper vector. This is the actual summary that feeds into the SVM to power recommendations, so hopefully it is good and representative!"
+    context['words_desc'] = "The embedding vector for this paper. These dimensions feed into the SVM to power recommendations."
     return render_template('inspect.html', **context)
 
 @app.route('/profile')

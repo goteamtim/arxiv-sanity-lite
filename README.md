@@ -1,46 +1,60 @@
 
 # arxiv-sanity-lite
 
-A much lighter-weight arxiv-sanity from-scratch re-write. Periodically polls arxiv API for new papers. Then allows users to tag papers of interest, and recommends new papers for each tag based on SVMs over tfidf features of paper abstracts. Allows one to search, rank, sort, slice and dice these results in a pretty web UI. Lastly, arxiv-sanity-lite can send you daily emails with recommendations of new papers based on your tags. Curate your tags, track recent papers in your area, and don't miss out!
+A much lighter-weight arxiv-sanity from-scratch re-write. Periodically polls the arxiv API for new papers, then allows users to tag papers of interest and recommends new papers for each tag using SVMs over sentence embeddings of paper abstracts. Allows one to search, rank, sort, slice and dice these results in a pretty web UI. Lastly, arxiv-sanity-lite can send you daily emails with recommendations of new papers based on your tags. Curate your tags, track recent papers in your area, and don't miss out!
 
 I am running a live version of this code on [arxiv-sanity-lite.com](https://arxiv-sanity-lite.com).
 
 ![Screenshot](screenshot.jpg)
 
-#### To run
-
-To run this locally I usually run the following script to update the database with any new papers. I typically schedule this via a periodic cron job:
-
-```bash
-#!/bin/bash
-
-python3 arxiv_daemon.py --num 2000
-
-if [ $? -eq 0 ]; then
-    echo "New papers detected! Running compute.py"
-    python3 compute.py
-else
-    echo "No new papers were added, skipping feature computation"
-fi
-```
-
-You can see that updating the database is a matter of first downloading the new papers via the arxiv api using `arxiv_daemon.py`, and then running `compute.py` to compute the tfidf features of the papers. Finally to serve the flask server locally we'd run something like:
-
-```bash
-export FLASK_APP=serve.py; flask run
-```
-
-All of the database will be stored inside the `data` directory. Finally, if you'd like to run your own instance on the interwebs I recommend simply running the above on a [Linode](https://www.linode.com), e.g. I am running this code currently on the smallest "Nanode 1 GB" instance indexing about 30K papers, which costs $5/month.
-
-(Optional) Finally, if you'd like to send periodic emails to users about new papers, see the `send_emails.py` script. You'll also have to `pip install sendgrid`. I run this script in a daily cron job.
-
 #### Requirements
 
- Install via requirements:
+This project uses [uv](https://github.com/astral-sh/uv) for dependency management. Install uv, then:
 
- ```bash
- pip install -r requirements.txt
- ```
+```bash
+uv sync
+```
+
+This creates a `.venv` and installs all dependencies including PyTorch and `sentence-transformers`.
+
+#### To run
+
+Fetch papers from the arxiv API (run this periodically, e.g. via cron):
+
+```bash
+uv run python arxiv_daemon.py --num 2000
+```
+
+Compute sentence embeddings for all papers:
+
+```bash
+uv run python compute.py
+```
+
+The first run downloads the `all-MiniLM-L6-v2` model (~90MB). On a Raspberry Pi 4, embedding ~2000 papers takes roughly 5–10 minutes. Subsequent runs are faster since the model is cached.
+
+Serve the Flask app locally:
+
+```bash
+uv run flask --app serve run
+```
+
+Or use the Makefile shortcuts:
+
+```bash
+make up   # fetch new papers + recompute embeddings
+make fun  # start the dev server
+```
+
+All database files are stored in the `data/` directory.
+
+#### Embeddings
+
+Paper recommendations are powered by [sentence-transformers](https://www.sbert.net/) (`all-MiniLM-L6-v2`) instead of TF-IDF. Each paper abstract is encoded into a 384-dimensional dense vector (L2-normalised), and an SVM is trained over those vectors at query time to rank papers by relevance to your tags.
+
+#### Email digests (optional)
+
+To send periodic recommendation emails to users, see `send_emails.py`. You'll need to `uv add sendgrid` and configure your SendGrid credentials. Run this script in a daily cron job.
 
 #### Todos
 
