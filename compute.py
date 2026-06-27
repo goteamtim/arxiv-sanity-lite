@@ -1,20 +1,21 @@
 """
 Computes sentence embedding features from paper abstracts and saves them to disk.
-Replaces the original TF-IDF vectorizer with all-MiniLM-L6-v2 embeddings.
+Uses fastembed (ONNX-based, no PyTorch) with all-MiniLM-L6-v2 for CPU-only inference
+on low-memory hardware like Raspberry Pi.
 The saved feature dict is backward-compatible with serve.py's load_features() call:
 - 'pids': list of paper ids (unchanged)
-- 'x': np.ndarray of shape (n_papers, 384), float32, L2-normalized (replaces sparse tfidf matrix)
+- 'x': np.ndarray of shape (n_papers, 384), float32, L2-normalized
 - 'vocab': empty dict (satisfies serve.py /inspect endpoint without crashing)
 - 'idf': empty np.ndarray (satisfies serve.py /inspect endpoint without crashing)
 """
 
 import argparse
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 from aslite.db import get_papers_db, save_features
 
-EMBED_MODEL = 'all-MiniLM-L6-v2'
-BATCH_SIZE = 64  # safe for Pi 4 4GB; reduce to 32 if OOM
+EMBED_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
+BATCH_SIZE = 32  # conservative default for low-memory hardware
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Arxiv Embedding Computor')
@@ -26,7 +27,7 @@ if __name__ == '__main__':
     print(args)
 
     print(f"loading embedding model: {EMBED_MODEL}")
-    model = SentenceTransformer(EMBED_MODEL)
+    model = TextEmbedding(model_name=EMBED_MODEL)
 
     pdb = get_papers_db(flag='r')
     all_pids = list(pdb.keys())
@@ -42,23 +43,16 @@ if __name__ == '__main__':
         text = ' '.join([d['title'], d['summary'], author_str])
         corpus.append(text)
 
-    print("encoding embeddings (this will be slow on first run — model downloads ~90MB)...")
-    embeddings = model.encode(
-        corpus,
-        batch_size=args.batch_size,
-        show_progress_bar=True,
-        normalize_embeddings=True,  # L2-normalize so cosine sim == dot product
-        convert_to_numpy=True,
-    )
-    embeddings = embeddings.astype(np.float32)
+    print("encoding embeddings (first run downloads ~90MB model)...")
+    embeddings = np.array(list(model.embed(corpus, batch_size=args.batch_size)), dtype=np.float32)
     print(f"embeddings shape: {embeddings.shape}")
 
     print("saving features to disk...")
     features = {
         'pids': all_pids,
-        'x': embeddings,            # shape (n, 384), dense float32
-        'vocab': {},                # stub: keeps /inspect from crashing
-        'idf': np.array([]),        # stub: keeps /inspect from crashing
+        'x': embeddings,
+        'vocab': {},
+        'idf': np.array([]),
     }
     save_features(features)
     print("done.")

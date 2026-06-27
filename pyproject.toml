@@ -8,5 +8,5 @@ dependencies = [
     "numpy>=1.26.0",
     "scikit-learn>=1.4.0",
     "sqlitedict>=2.1.0",
-    "sentence-transformers>=3.0.0",
+    "fastembed>=0.3.0",
 ]

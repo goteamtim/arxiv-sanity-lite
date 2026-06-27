@@ -47,7 +47,7 @@ def get_tags():
     if g.user is None:
         return {}
     if not hasattr(g, '_tags'):
-        with get_tags_db() as tags_db:
+        with get_tags_db(flag='c') as tags_db:
             tags_dict = tags_db[g.user] if g.user in tags_db else {}
         g._tags = tags_dict
     return g._tags
@@ -341,7 +341,7 @@ def inspect():
 @app.route('/profile')
 def profile():
     context = default_context()
-    with get_email_db() as edb:
+    with get_email_db(flag='c') as edb:
         email = edb.get(g.user, '')
         context['email'] = email
     return render_template('profile.html', **context)
@@ -415,7 +415,7 @@ def sub(pid=None, tag=None):
 
         # if the user doesn't have any tags, there is nothing to do
         if not g.user in tags_db:
-            return "user has no library of tags ¯\_(ツ)_/¯"
+            return "user has no library of tags ¯\\_(ツ)_/¯"
 
         # fetch the user library object
         d = tags_db[g.user]
